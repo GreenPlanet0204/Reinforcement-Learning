@@ -241,9 +241,9 @@ if __name__ == "__main__":
 
     state_size = (img_rows, img_cols, img_channels)
     agent = A2CAgent(state_size, action_size)
-    agent.actor = Networks.actor_network(
+    agent.actor = actor_network(
         state_size, action_size, agent.actor_lr)
-    agent.critic = Networks.critic_network(
+    agent.critic = critic_network(
         state_size, agent.value_size, agent.critic_lr)
 
     # Start training
