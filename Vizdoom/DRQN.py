@@ -25,14 +25,33 @@ import itertools as it
 from time import sleep
 import tensorflow as tf
 
-from Networks import Networks
-
 def preprocessImg(img, size):
     
     img = np.rollaxis(img, 0, 3) # It becomes (640, 480, 3)
     img = skimage.transform.resize(img, size)
 
     return img
+
+def drqn(input_shape, action_size, learning_rate):
+    
+    model = Sequential()
+    model.add(TimeDistributed(Conv2D(32, 8, 8, strides=(4,4), activation='relu'), input_shape=(input_shape)))
+    model.add(TimeDistributed(Conv2D(64, 4, 4, strides=(2,2), activation='relu')))
+    model.add(TimeDistributed(Conv2D(64, 3, 3, activation='relu')))
+    model.add(TimeDistributed(Flatten()))
+
+    # Use all traces for training
+    #model.add(LSTM(512, return_sequences=True,  activation='tanh'))
+    #model.add(TimeDistributed(Dense(units=action_size, activation='linear')))
+
+    # Use last trace for training
+    model.add(LSTM(512,  activation='tanh'))
+    model.add(Dense(units=action_size, activation='linear'))
+
+    adam = Adam(lr=learning_rate)
+    model.compile(loss='mse',optimizer=adam)
+
+    return model
 
 class ReplayMemory():
     """
@@ -208,8 +227,8 @@ if __name__ == "__main__":
     state_size = (trace_length, img_rows, img_cols, img_channels)
     agent = DoubleDQNAgent(state_size, action_size, trace_length)
 
-    agent.model = Networks.drqn(state_size, action_size, agent.learning_rate)
-    agent.target_model = Networks.drqn(state_size, action_size, agent.learning_rate)
+    agent.model = drqn(state_size, action_size, agent.learning_rate)
+    agent.target_model = drqn(state_size, action_size, agent.learning_rate)
 
     s_t = game_state.screen_buffer # 480 x 640
     s_t = preprocessImg(s_t, size=(img_rows, img_cols))
