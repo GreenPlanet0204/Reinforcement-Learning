@@ -25,9 +25,6 @@ import itertools as it
 from time import sleep
 import tensorflow as tf
 
-from Networks import Networks
-
-
 def preprocessImg(img, size):
 
     img = np.rollaxis(img, 0, 3)    # It becomes (640, 480, 3)
@@ -193,7 +190,7 @@ if __name__ == "__main__":
     state_size = (img_rows, img_cols, img_channels)
     agent = REINFORCEAgent(state_size, action_size)
 
-    agent.model = Networks.policy_reinforce(
+    agent.model = policy_reinforce(
         state_size, action_size, agent.learning_rate)
 
     # Start training
