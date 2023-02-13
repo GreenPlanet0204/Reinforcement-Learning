@@ -32,10 +32,41 @@ def preprocessImg(img, size):
 
     img = np.rollaxis(img, 0, 3)    # It becomes (640, 480, 3)
     img = skimage.transform.resize(img, size)
-    img = skimage.color.rgb2gray(img) 
+    img = skimage.color.rgb2gray(img)
 
     return img
-    
+
+
+def policy_reinforce(input_shape, action_size, learning_rate):
+    """
+        Model for REINFORCE
+        """
+
+    model = Sequential()
+    model.add(Conv2D(32, 8, 8, strides=(4, 4), input_shape=(input_shape)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Conv2D(64, 4, 4, strides=(2, 2)))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Conv2D(64, 3, 3))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Flatten())
+    model.add(Dense(64))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Dense(32))
+    model.add(BatchNormalization())
+    model.add(Activation('relu'))
+    model.add(Dense(units=action_size, activation='softmax'))
+
+    adam = Adam(lr=learning_rate)
+    model.compile(loss='categorical_crossentropy', optimizer=adam)
+
+    return model
+
+
 class REINFORCEAgent:
 
     def __init__(self, state_size, action_size):
@@ -43,7 +74,7 @@ class REINFORCEAgent:
         self.state_size = state_size
         self.action_size = action_size
         self.observe = 0
-        self.frame_per_action = 4 # Frame skipping
+        self.frame_per_action = 4  # Frame skipping
 
         # These are hyper parameters for the Policy Gradient
         self.discount_factor = 0.99
@@ -56,11 +87,11 @@ class REINFORCEAgent:
         self.states, self.actions, self.rewards = [], [], []
 
         # Performance Statistics
-        self.stats_window_size= 50 # window size for computing rolling statistics
-        self.mavg_score = [] # Moving Average of Survival Time
-        self.var_score = [] # Variance of Survival Time
-        self.mavg_ammo_left = [] # Moving Average of Ammo used
-        self.mavg_kill_counts = [] # Moving Average of Kill Counts
+        self.stats_window_size = 50  # window size for computing rolling statistics
+        self.mavg_score = []  # Moving Average of Survival Time
+        self.var_score = []  # Variance of Survival Time
+        self.mavg_ammo_left = []  # Moving Average of Ammo used
+        self.mavg_kill_counts = []  # Moving Average of Kill Counts
 
     # Use the output of policy network, pick action stochastically (Stochastic Policy)
     def get_action(self, state):
@@ -68,7 +99,7 @@ class REINFORCEAgent:
         return np.random.choice(self.action_size, 1, p=policy)[0], policy
 
     # Instead agent uses sample returns for evaluating policy
-    # Use TD(1) i.e. Monte Carlo updates 
+    # Use TD(1) i.e. Monte Carlo updates
     def discount_rewards(self, rewards):
         discounted_rewards = np.zeros_like(rewards)
         running_add = 0
@@ -91,42 +122,43 @@ class REINFORCEAgent:
 
         discounted_rewards = self.discount_rewards(self.rewards)
         # Standardized discounted rewards
-        discounted_rewards -= np.mean(discounted_rewards) 
+        discounted_rewards -= np.mean(discounted_rewards)
         if np.std(discounted_rewards):
             discounted_rewards /= np.std(discounted_rewards)
         else:
             self.states, self.actions, self.rewards = [], [], []
-            print ('std = 0!')
+            print('std = 0!')
             return 0
 
-        update_inputs = np.zeros(((episode_length,) + self.state_size)) # Episode_length x64x64x4
+        # Episode_length x64x64x4
+        update_inputs = np.zeros(((episode_length,) + self.state_size))
         # Similar to one-hot target but the "1" is replaced by discounted_rewards R_t
         advantages = np.zeros((episode_length, self.action_size))
 
         # Episode length is like the mini batch size in DQN
         for i in range(episode_length):
-            update_inputs[i,:,:,:] = self.states[i]
+            update_inputs[i, :, :, :] = self.states[i]
             advantages[i][self.actions[i]] = discounted_rewards[i]
-        
+
         loss = self.model.fit(update_inputs, advantages, nb_epoch=1, verbose=0)
         self.states, self.actions, self.rewards = [], [], []
 
         return loss.history['loss']
 
-
     def shape_reward(self, r_t, misc, prev_misc, t):
-        
+
         # Check any kill count
         if (misc[0] > prev_misc[0]):
             r_t = r_t + 1
 
-        if (misc[1] < prev_misc[1]): # Use ammo
+        if (misc[1] < prev_misc[1]):  # Use ammo
             r_t = r_t - 0.1
 
-        if (misc[2] < prev_misc[2]): # Loss HEALTH
+        if (misc[2] < prev_misc[2]):  # Loss HEALTH
             r_t = r_t - 0.1
 
         return r_t
+
 
 if __name__ == "__main__":
 
@@ -154,69 +186,71 @@ if __name__ == "__main__":
 
     action_size = game.get_available_buttons_size()
 
-    img_rows , img_cols = 64, 64
+    img_rows, img_cols = 64, 64
     # Convert image into Black and white
-    img_channels = 4 # We stack 4 frames
+    img_channels = 4  # We stack 4 frames
 
     state_size = (img_rows, img_cols, img_channels)
     agent = REINFORCEAgent(state_size, action_size)
 
-    agent.model = Networks.policy_reinforce(state_size, action_size, agent.learning_rate)
+    agent.model = Networks.policy_reinforce(
+        state_size, action_size, agent.learning_rate)
 
     # Start training
     GAME = 0
     t = 0
-    max_life = 0 # Maximum episode life (Proxy for agent performance)
+    max_life = 0  # Maximum episode life (Proxy for agent performance)
 
-    # Buffer to compute rolling statistics 
-    life_buffer, ammo_buffer, kills_buffer = [], [], [] 
+    # Buffer to compute rolling statistics
+    life_buffer, ammo_buffer, kills_buffer = [], [], []
 
     for i in range(max_episodes):
 
         game.new_episode()
         game_state = game.get_state()
-        misc = game_state.game_variables 
+        misc = game_state.game_variables
         prev_misc = misc
 
-        x_t = game_state.screen_buffer # 480 x 640
+        x_t = game_state.screen_buffer  # 480 x 640
         x_t = preprocessImg(x_t, size=(img_rows, img_cols))
-        s_t = np.stack(([x_t]*4), axis=2) # It becomes 64x64x4
-        s_t = np.expand_dims(s_t, axis=0) # 1x64x64x4
+        s_t = np.stack(([x_t]*4), axis=2)  # It becomes 64x64x4
+        s_t = np.expand_dims(s_t, axis=0)  # 1x64x64x4
 
-        life = 0 # Episode life
+        life = 0  # Episode life
 
         while not game.is_episode_finished():
 
-            loss = 0 # Training Loss at each update
-            r_t = 0 # Initialize reward at time t
-            a_t = np.zeros([action_size]) # Initialize action at time t
+            loss = 0  # Training Loss at each update
+            r_t = 0  # Initialize reward at time t
+            a_t = np.zeros([action_size])  # Initialize action at time t
 
             x_t = game_state.screen_buffer
             x_t = preprocessImg(x_t, size=(img_rows, img_cols))
             x_t = np.reshape(x_t, (1, img_rows, img_cols, 1))
             s_t = np.append(x_t, s_t[:, :, :, :3], axis=3)
-                
+
             # Sample action from stochastic softmax policy
-            action_idx, policy  = agent.get_action(s_t)
-            a_t[action_idx] = 1 
+            action_idx, policy = agent.get_action(s_t)
+            a_t[action_idx] = 1
 
             a_t = a_t.astype(int)
             game.set_action(a_t.tolist())
-            skiprate = agent.frame_per_action # Frame Skipping = 4
+            skiprate = agent.frame_per_action  # Frame Skipping = 4
             game.advance_action(skiprate)
 
-            r_t = game.get_last_reward()  # Each frame we get reward of 0.1, so 4 frames will be 0.4
+            # Each frame we get reward of 0.1, so 4 frames will be 0.4
+            r_t = game.get_last_reward()
             # Check if episode is terminated
             is_terminated = game.is_episode_finished()
 
             if (is_terminated):
                 # Save max_life
                 if (life > max_life):
-                    max_life = life 
+                    max_life = life
                 life_buffer.append(life)
                 ammo_buffer.append(misc[1])
                 kills_buffer.append(misc[0])
-                print ("Episode Finish ", prev_misc, policy)
+                print("Episode Finish ", prev_misc, policy)
             else:
                 life += 1
                 game_state = game.get_state()  # Observe again after we take the action
@@ -250,27 +284,33 @@ if __name__ == "__main__":
             if (is_terminated):
 
                 # Print performance statistics at every episode end
-                print("TIME", t, "/ GAME", GAME, "/ STATE", state, "/ ACTION", action_idx, "/ REWARD", r_t, "/ LIFE", max_life, "/ LOSS", loss)
+                print("TIME", t, "/ GAME", GAME, "/ STATE", state, "/ ACTION",
+                      action_idx, "/ REWARD", r_t, "/ LIFE", max_life, "/ LOSS", loss)
 
                 # Save Agent's Performance Statistics
-                if GAME % agent.stats_window_size == 0 and t > agent.observe: 
+                if GAME % agent.stats_window_size == 0 and t > agent.observe:
                     print("Update Rolling Statistics")
                     agent.mavg_score.append(np.mean(np.array(life_buffer)))
                     agent.var_score.append(np.var(np.array(life_buffer)))
                     agent.mavg_ammo_left.append(np.mean(np.array(ammo_buffer)))
-                    agent.mavg_kill_counts.append(np.mean(np.array(kills_buffer)))
+                    agent.mavg_kill_counts.append(
+                        np.mean(np.array(kills_buffer)))
 
                     # Reset rolling stats buffer
-                    life_buffer, ammo_buffer, kills_buffer = [], [], [] 
+                    life_buffer, ammo_buffer, kills_buffer = [], [], []
 
                     # Write Rolling Statistics to file
                     with open("statistics/reinforce_stats.txt", "w") as stats_file:
                         stats_file.write('Game: ' + str(GAME) + '\n')
                         stats_file.write('Max Score: ' + str(max_life) + '\n')
-                        stats_file.write('mavg_score: ' + str(agent.mavg_score) + '\n')
-                        stats_file.write('var_score: ' + str(agent.var_score) + '\n')
-                        stats_file.write('mavg_ammo_left: ' + str(agent.mavg_ammo_left) + '\n')
-                        stats_file.write('mavg_kill_counts: ' + str(agent.mavg_kill_counts) + '\n')
-        
+                        stats_file.write('mavg_score: ' +
+                                         str(agent.mavg_score) + '\n')
+                        stats_file.write(
+                            'var_score: ' + str(agent.var_score) + '\n')
+                        stats_file.write('mavg_ammo_left: ' +
+                                         str(agent.mavg_ammo_left) + '\n')
+                        stats_file.write('mavg_kill_counts: ' +
+                                         str(agent.mavg_kill_counts) + '\n')
+
         # Episode Finish. Increment game count
         GAME += 1
