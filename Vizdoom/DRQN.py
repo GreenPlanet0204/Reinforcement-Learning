@@ -25,33 +25,38 @@ import itertools as it
 from time import sleep
 import tensorflow as tf
 
+
 def preprocessImg(img, size):
-    
-    img = np.rollaxis(img, 0, 3) # It becomes (640, 480, 3)
+
+    img = np.rollaxis(img, 0, 3)  # It becomes (640, 480, 3)
     img = skimage.transform.resize(img, size)
 
     return img
 
+
 def drqn(input_shape, action_size, learning_rate):
-    
+
     model = Sequential()
-    model.add(TimeDistributed(Conv2D(32, 8, 8, strides=(4,4), activation='relu'), input_shape=(input_shape)))
-    model.add(TimeDistributed(Conv2D(64, 4, 4, strides=(2,2), activation='relu')))
+    model.add(TimeDistributed(Conv2D(32, 8, 8, strides=(4, 4),
+              activation='relu'), input_shape=(input_shape)))
+    model.add(TimeDistributed(
+        Conv2D(64, 4, 4, strides=(2, 2), activation='relu')))
     model.add(TimeDistributed(Conv2D(64, 3, 3, activation='relu')))
     model.add(TimeDistributed(Flatten()))
 
     # Use all traces for training
-    #model.add(LSTM(512, return_sequences=True,  activation='tanh'))
-    #model.add(TimeDistributed(Dense(units=action_size, activation='linear')))
+    # model.add(LSTM(512, return_sequences=True,  activation='tanh'))
+    # model.add(TimeDistributed(Dense(units=action_size, activation='linear')))
 
     # Use last trace for training
     model.add(LSTM(512,  activation='tanh'))
     model.add(Dense(units=action_size, activation='linear'))
 
     adam = Adam(lr=learning_rate)
-    model.compile(loss='mse',optimizer=adam)
+    model.compile(loss='mse', optimizer=adam)
 
     return model
+
 
 class ReplayMemory():
     """
@@ -76,9 +81,10 @@ class ReplayMemory():
         sampledTraces = np.array(sampledTraces)
         return sampledTraces
 
+
 class DoubleDQNAgent:
     def __init__(self, state_size, action_size, trace_length):
-        
+
         # size of state and action
         self.state_size = state_size
         self.action_size = action_size
@@ -95,7 +101,7 @@ class DoubleDQNAgent:
         self.frame_per_action = 4
         self.trace_length = trace_length
         self.update_target_freq = 3000
-        self.timestep_per_train = 5 # Number of timesteps between training interval
+        self.timestep_per_train = 5  # Number of timesteps between training interval
 
         # Create replay memory
         self.memory = ReplayMemory()
@@ -105,11 +111,11 @@ class DoubleDQNAgent:
         self.target_model = None
 
         # Performance Statistics
-        self.stats_window_size= 50 # window size for computing rolling statistics
-        self.mavg_score = [] # Moving Average of Survival Time
-        self.var_score = [] # Variance of Survival Time
-        self.mavg_ammo_left = [] # Moving Average of Ammo used
-        self.mavg_kill_counts = [] # Moving Average of Kill Counts
+        self.stats_window_size = 50  # window size for computing rolling statistics
+        self.mavg_score = []  # Moving Average of Survival Time
+        self.var_score = []  # Variance of Survival Time
+        self.mavg_ammo_left = []  # Moving Average of Ammo used
+        self.mavg_kill_counts = []  # Moving Average of Kill Counts
 
     def update_target_model(self):
         """
@@ -124,26 +130,26 @@ class DoubleDQNAgent:
         if np.random.rand() <= self.epsilon:
             action_idx = random.randrange(self.action_size)
         else:
-  
+
             # Use all traces for RNN
-            #q = self.model.predict(state) # 1x8x3
-            #action_idx = np.argmax(q[0][-1])
+            # q = self.model.predict(state) # 1x8x3
+            # action_idx = np.argmax(q[0][-1])
 
             # Only use last trace for RNN
-            q = self.model.predict(state) # 1x3
+            q = self.model.predict(state)  # 1x3
             action_idx = np.argmax(q)
         return action_idx
 
     def shape_reward(self, r_t, misc, prev_misc, t):
-        
+
         # Check any kill count
         if (misc[0] > prev_misc[0]):
             r_t = r_t + 1
 
-        if (misc[1] < prev_misc[1]): # Use ammo
+        if (misc[1] < prev_misc[1]):  # Use ammo
             r_t = r_t - 0.1
 
-        if (misc[2] < prev_misc[2]): # Loss HEALTH
+        if (misc[2] < prev_misc[2]):  # Loss HEALTH
             r_t = r_t - 0.1
 
         return r_t
@@ -151,21 +157,23 @@ class DoubleDQNAgent:
     # pick samples randomly from replay memory (with batch_size)
     def train_replay(self):
 
-        sample_traces = self.memory.sample(self.batch_size, self.trace_length) # 32x8x4
+        sample_traces = self.memory.sample(
+            self.batch_size, self.trace_length)  # 32x8x4
 
         # Shape (batch_size, trace_length, img_rows, img_cols, color_channels)
-        update_input = np.zeros(((self.batch_size,) + self.state_size)) # 32x8x64x64x3
+        update_input = np.zeros(
+            ((self.batch_size,) + self.state_size))  # 32x8x64x64x3
         update_target = np.zeros(((self.batch_size,) + self.state_size))
 
-        action = np.zeros((self.batch_size, self.trace_length)) # 32x8
+        action = np.zeros((self.batch_size, self.trace_length))  # 32x8
         reward = np.zeros((self.batch_size, self.trace_length))
 
         for i in range(self.batch_size):
             for j in range(self.trace_length):
-                update_input[i,j,:,:,:] = sample_traces[i][j][0]
-                action[i,j] = sample_traces[i][j][1]
-                reward[i,j] = sample_traces[i][j][2]
-                update_target[i,j,:,:,:] = sample_traces[i][j][3]
+                update_input[i, j, :, :, :] = sample_traces[i][j][0]
+                action[i, j] = sample_traces[i][j][1]
+                reward[i, j] = sample_traces[i][j][2]
+                update_target[i, j, :, :, :] = sample_traces[i][j][3]
 
         """
         # Use all traces for training
@@ -179,16 +187,17 @@ class DoubleDQNAgent:
         """
 
         # Only use the last trace for training
-        target = self.model.predict(update_input) # 32x3
-        target_val = self.model.predict(update_target) # 32x3
+        target = self.model.predict(update_input)  # 32x3
+        target_val = self.model.predict(update_target)  # 32x3
 
         for i in range(self.batch_size):
             a = np.argmax(target_val[i])
-            target[i][int(action[i][-1])] = reward[i][-1] + self.gamma * (target_val[i][a])
+            target[i][int(action[i][-1])] = reward[i][-1] + \
+                self.gamma * (target_val[i][a])
 
         loss = self.model.train_on_batch(update_input, target)
 
-        return np.max(target[-1,-1]), loss
+        return np.max(target[-1, -1]), loss
 
     # load the saved model
     def load_model(self, name):
@@ -198,8 +207,9 @@ class DoubleDQNAgent:
     def save_model(self, name):
         self.model.save_weights(name)
 
+
 if __name__ == "__main__":
-    
+
     # Avoid Tensorflow eats up GPU memory
     config = tf.compat.v1.ConfigProto()
     config.gpu_options.allow_growth = True
@@ -220,9 +230,9 @@ if __name__ == "__main__":
 
     action_size = game.get_available_buttons_size()
 
-    img_rows , img_cols = 64, 64
-    img_channels = 3 # Color channel
-    trace_length = 4 # Temporal Dimension
+    img_rows, img_cols = 64, 64
+    img_channels = 3  # Color channel
+    trace_length = 4  # Temporal Dimension
 
     state_size = (trace_length, img_rows, img_cols, img_channels)
     agent = DoubleDQNAgent(state_size, action_size, trace_length)
@@ -230,7 +240,7 @@ if __name__ == "__main__":
     agent.model = drqn(state_size, action_size, agent.learning_rate)
     agent.target_model = drqn(state_size, action_size, agent.learning_rate)
 
-    s_t = game_state.screen_buffer # 480 x 640
+    s_t = game_state.screen_buffer  # 480 x 640
     s_t = preprocessImg(s_t, size=(img_rows, img_cols))
 
     is_terminated = game.is_episode_finished()
@@ -239,12 +249,12 @@ if __name__ == "__main__":
     epsilon = agent.initial_epsilon
     GAME = 0
     t = 0
-    max_life = 0 # Maximum episode life (Proxy for agent performance)
+    max_life = 0  # Maximum episode life (Proxy for agent performance)
     life = 0
-    episode_buf = [] # Save entire episode
+    episode_buf = []  # Save entire episode
 
-    # Buffer to compute rolling statistics 
-    life_buffer, ammo_buffer, kills_buffer = [], [], [] 
+    # Buffer to compute rolling statistics
+    life_buffer, ammo_buffer, kills_buffer = [], [], []
 
     while not game.is_episode_finished():
 
@@ -252,13 +262,14 @@ if __name__ == "__main__":
         Q_max = 0
         r_t = 0
         a_t = np.zeros([action_size])
-        
+
         # Epsilon Greedy
         if len(episode_buf) > agent.trace_length:
             # 1x8x64x64x3
-            state_series = np.array([trace[-1] for trace in episode_buf[-agent.trace_length:]])
+            state_series = np.array(
+                [trace[-1] for trace in episode_buf[-agent.trace_length:]])
             state_series = np.expand_dims(state_series, axis=0)
-            action_idx  = agent.get_action(state_series)
+            action_idx = agent.get_action(state_series)
         else:
             action_idx = random.randrange(agent.action_size)
         a_t[action_idx] = 1
@@ -271,7 +282,8 @@ if __name__ == "__main__":
         game_state = game.get_state()  # Observe again after we take the action
         is_terminated = game.is_episode_finished()
 
-        r_t = game.get_last_reward()  #each frame we get reward of 0.1, so 4 frames will be 0.4
+        # each frame we get reward of 0.1, so 4 frames will be 0.4
+        r_t = game.get_last_reward()
 
         if (is_terminated):
             if (life > max_life):
@@ -280,7 +292,7 @@ if __name__ == "__main__":
             life_buffer.append(life)
             ammo_buffer.append(misc[1])
             kills_buffer.append(misc[0])
-            print ("Episode Finish ", misc)
+            print("Episode Finish ", misc)
             game.new_episode()
             game_state = game.get_state()
             misc = game_state.game_variables
@@ -297,12 +309,13 @@ if __name__ == "__main__":
         else:
             life += 1
 
-        #update the cache
+        # update the cache
         prev_misc = misc
 
         # Update epsilon
         if agent.epsilon > agent.final_epsilon and t > agent.observe:
-            agent.epsilon -= (agent.initial_epsilon - agent.final_epsilon) / agent.explore
+            agent.epsilon -= (agent.initial_epsilon -
+                              agent.final_epsilon) / agent.explore
 
         # Do the training
         if t > agent.observe:
@@ -313,7 +326,7 @@ if __name__ == "__main__":
 
         if (is_terminated):
             agent.memory.add(episode_buf)
-            episode_buf = [] # Reset Episode Buf
+            episode_buf = []  # Reset Episode Buf
 
         s_t = s_t1
         t += 1
@@ -333,12 +346,12 @@ if __name__ == "__main__":
             state = "train"
 
         if (is_terminated):
-            print("TIME", t, "/ GAME", GAME, "/ STATE", state, \
-                  "/ EPSILON", agent.epsilon, "/ ACTION", action_idx, "/ REWARD", r_t, \
+            print("TIME", t, "/ GAME", GAME, "/ STATE", state,
+                  "/ EPSILON", agent.epsilon, "/ ACTION", action_idx, "/ REWARD", r_t,
                   "/ Q_MAX %e" % np.max(Q_max), "/ LIFE", max_life, "/ LOSS", loss)
 
             # Save Agent's Performance Statistics
-            if GAME % agent.stats_window_size == 0 and t > agent.observe: 
+            if GAME % agent.stats_window_size == 0 and t > agent.observe:
                 print("Update Rolling Statistics")
                 agent.mavg_score.append(np.mean(np.array(life_buffer)))
                 agent.var_score.append(np.var(np.array(life_buffer)))
@@ -346,13 +359,17 @@ if __name__ == "__main__":
                 agent.mavg_kill_counts.append(np.mean(np.array(kills_buffer)))
 
                 # Reset rolling stats buffer
-                life_buffer, ammo_buffer, kills_buffer = [], [], [] 
+                life_buffer, ammo_buffer, kills_buffer = [], [], []
 
                 # Write Rolling Statistics to file
                 with open("statistics/drqn_stats.txt", "w") as stats_file:
                     stats_file.write('Game: ' + str(GAME) + '\n')
                     stats_file.write('Max Score: ' + str(max_life) + '\n')
-                    stats_file.write('mavg_score: ' + str(agent.mavg_score) + '\n')
-                    stats_file.write('var_score: ' + str(agent.var_score) + '\n')
-                    stats_file.write('mavg_ammo_left: ' + str(agent.mavg_ammo_left) + '\n')
-                    stats_file.write('mavg_kill_counts: ' + str(agent.mavg_kill_counts) + '\n')
+                    stats_file.write('mavg_score: ' +
+                                     str(agent.mavg_score) + '\n')
+                    stats_file.write(
+                        'var_score: ' + str(agent.var_score) + '\n')
+                    stats_file.write('mavg_ammo_left: ' +
+                                     str(agent.mavg_ammo_left) + '\n')
+                    stats_file.write('mavg_kill_counts: ' +
+                                     str(agent.mavg_kill_counts) + '\n')
