@@ -19,7 +19,7 @@ from keras.layers import LSTM, GRU, BatchNormalization
 from keras.optimizers import SGD, Adam, RMSprop
 from keras import backend as K
 
-import tensorflow as tf
+import tensorflow as tfgp
 
 class Networks(object):
 
